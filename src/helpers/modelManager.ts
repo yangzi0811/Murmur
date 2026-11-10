@@ -309,6 +309,14 @@ class ModelManager {
   // [20260911_Fix_336_HubLayout] END
 
   async checkModelFiles(): Promise<ModelCheckResult> {
+    // [20261110_Fix_OnnxReadiness] The runtime prefers ONNX, so its startup
+    // gate must accept the same pinned generation before probing torch caches.
+    const onnxResult = this.checkOnnxModelFiles();
+    if (onnxResult) {
+      this.modelsDownloaded = onnxResult.models_downloaded;
+      return onnxResult;
+    }
+    // [20261110_Fix_OnnxReadiness] END
     const now = Date.now();
     if (
       globalModelCheckCache &&
@@ -397,6 +405,50 @@ class ModelManager {
     globalModelCheckTime = now;
     return result;
   }
+
+  // [20261110_Fix_OnnxReadiness] Preserve torch fallback when ONNX is partial.
+  private checkOnnxModelFiles(): ModelCheckResult | null {
+    const root = this.getOnnxModelsRoot();
+    if (!fs.existsSync(root)) return null;
+    try {
+      const pin = loadModelPin(this.getModelPinPath());
+      const details = Object.fromEntries(
+        Object.keys(this.modelConfigs).map((role) => {
+          const model = pin.models[role];
+          const ready = Boolean(
+            model &&
+            readinessProblems(path.join(root, model.name), model).length === 0,
+          );
+          return [role, { downloaded: ready, complete: ready }];
+        }),
+      );
+      if (
+        Object.entries(this.modelConfigs).some(
+          ([role, config]) => config.required && !details[role]?.downloaded,
+        )
+      ) {
+        return null;
+      }
+      const missing = Object.keys(details).filter(
+        (role) => !details[role]?.downloaded,
+      );
+      return {
+        success: true,
+        models_downloaded: missing.length === 0,
+        minimum_ready: true,
+        missing_models: missing,
+        model_details: details,
+        cache_path: root,
+      };
+    } catch (error) {
+      this.logger.warn(
+        "ONNX readiness check failed; checking torch cache",
+        error,
+      );
+      return null;
+    }
+  }
+  // [20261110_Fix_OnnxReadiness] END
 
   _verifyModel(modelFile: string, config: ModelConfig): boolean {
     try {
