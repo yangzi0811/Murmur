@@ -162,7 +162,14 @@ export const useRecording = ({
       setIsRecording(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelStatus.isReady, modelStatus.isLoading, modelStatus.error]);
+  }, [
+    modelStatus.isReady,
+    // [20261110_Fix_IdleRecording] Refresh the reload pre-trigger state.
+    modelStatus.isUnloaded,
+    // [20261110_Fix_IdleRecording] END
+    modelStatus.isLoading,
+    modelStatus.error,
+  ]);
 
   // 停止录音
   const stopRecording = React.useCallback(() => {

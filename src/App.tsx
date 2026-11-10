@@ -397,8 +397,21 @@ export default function App() {
     }
   }, [modelStatus, t]);
 
+  // [20261110_Fix_IdleRecording] Idle-unloaded models are recordable:
+  // useRecording starts reloading them while capturing audio. Active
+  // recording must also remain stoppable during that reload.
+  const canStartRecording = modelStatus.isReady || modelStatus.isUnloaded;
+  const canToggleRecording = canStartRecording || isRecording;
+  // [20261110_Fix_IdleRecording] END
+
   // 切换录音状态
   const toggleRecording = useCallback(() => {
+    // [20261110_Fix_IdleRecording] Stopping never depends on model readiness.
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+    // [20261110_Fix_IdleRecording] END
     // 检查模型状态
     if (modelStatus.stage === "need_download") {
       toast.warning(t("app.toastNeedDownload", "📥 请先下载AI模型文件"));
@@ -424,18 +437,17 @@ export default function App() {
       return;
     }
 
-    if (!modelStatus.isReady) {
+    if (!canStartRecording) {
       toast.warning(t("app.toastNotReady", "⏳ 模型未就绪，请稍候..."));
       return;
     }
 
-    if (!isRecording && !isRecordingProcessing) {
+    if (!isRecordingProcessing) {
       startRecording();
-    } else if (isRecording) {
-      stopRecording();
     }
   }, [
     modelStatus,
+    canStartRecording,
     isRecording,
     isRecordingProcessing,
     startRecording,
@@ -682,7 +694,7 @@ export default function App() {
   // mic cannot run anyway, and download/absence is what the bot should tell.
   const getBotState = (): StateId => {
     if (recordingError) return "exclaim";
-    if (!modelStatus.isReady) {
+    if (!modelStatus.isReady && !isRecording) {
       switch (modelStatus.stage) {
         case "downloading":
           return "orbit";
@@ -729,14 +741,15 @@ export default function App() {
     // 统一的按钮样式，不再根据状态变色
     const buttonStyle = `${baseClasses} bg-[#f5f5f7] dark:bg-[#2c2c2e] hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] hover:shadow-2xl transform hover:scale-105`;
 
-    // 如果模型未就绪，显示禁用状态（统一的灰色）
-    if (!modelStatus.isReady) {
+    // [20261110_Fix_IdleRecording] Keep reloadable/active recording usable.
+    if (!canToggleRecording) {
       return {
         className: `${baseClasses} bg-[#e8e8ed] dark:bg-[#2c2c2e] cursor-not-allowed opacity-50`,
         tooltip: getStageStatusText(modelStatus, t),
         disabled: true,
       };
     }
+    // [20261110_Fix_IdleRecording] END
 
     switch (micState) {
       case "idle":
@@ -979,9 +992,7 @@ export default function App() {
                   {/* [20260815_Refactor_LoadingDotsCss] downloading/loading/
                       not-ready branches previously rendered two identical
                       LoadingIndicator trees; merged into one LoadingDots. */}
-                  {modelStatus.stage === "downloading" ||
-                  modelStatus.stage === "loading" ||
-                  !modelStatus.isReady ? (
+                  {!canToggleRecording ? (
                     <LoadingDots />
                   ) : micState === "idle" ? (
                     <SoundWaveIcon size={20} isActive={false} />
@@ -1014,7 +1025,7 @@ export default function App() {
                           { progress: modelStatus.downloadProgress },
                         )
                       : t("app.preparingDownload", "正在准备下载模型文件...")
-                    : !modelStatus.isReady
+                    : !canToggleRecording
                       ? getStageStatusText(modelStatus, t)
                       : micState === "recording"
                         ? t("app.recordingHint", "正在录音，再次点击停止")

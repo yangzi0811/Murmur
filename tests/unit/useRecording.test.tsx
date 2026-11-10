@@ -50,7 +50,7 @@ const mockModelStatus = {
   downloadModels: vi.fn(),
 };
 vi.mock("../../src/hooks/useModelStatus", () => ({
-  useModelStatus: () => mockModelStatus,
+  useModelStatus: () => ({ ...mockModelStatus }),
 }));
 
 import {
@@ -259,6 +259,27 @@ describe("[20260729_Test_UseRecording] useRecording — startRecording gate", ()
     expect(reloadSpy).toHaveBeenCalledTimes(1);
     expect(result.current.error).toBeNull();
   });
+
+  // [20261110_Fix_IdleRecording] A new unloaded state must refresh the
+  // callback even when ready/loading/error have not changed.
+  it("refreshes the recording callback when only isUnloaded changes", async () => {
+    Object.assign(mockModelStatus, {
+      isReady: false,
+      isUnloaded: false,
+      isLoading: false,
+      error: null,
+    });
+    const reloadSpy = vi.fn();
+    setElectronAPI({ reloadFunasrModels: reloadSpy });
+    const { result, rerender } = renderHook(() => useRecording());
+    mockModelStatus.isUnloaded = true;
+    rerender();
+    await act(async () => result.current.startRecording());
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.isRecording).toBe(true);
+    act(() => result.current.cancelRecording());
+  });
+  // [20261110_Fix_IdleRecording] END
 
   it("loading model: recording is blocked (audio would be lost at stop)", async () => {
     mockModelStatus.isReady = false;

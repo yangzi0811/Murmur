@@ -125,6 +125,7 @@ vi.mock("../../src/hooks/useRecording", () => ({
 const modelCtl = {
   stage: "need_download",
   isReady: false,
+  isUnloaded: false,
   isLoading: true,
   isDownloading: false,
   downloadProgress: 0,
@@ -299,6 +300,7 @@ describe("[20260816_Test_AppBehaviors] App behavior matrix", () => {
     Object.assign(modelCtl, {
       stage: "need_download",
       isReady: false,
+      isUnloaded: false,
       isLoading: true,
       isDownloading: false,
       downloadProgress: 0,
@@ -378,6 +380,42 @@ describe("[20260816_Test_AppBehaviors] App behavior matrix", () => {
     fireEvent.click(screen.getByTestId("mic-button"));
     expect(recordingCtl.stopRecording).toHaveBeenCalledTimes(1);
   });
+
+  // [20261110_Fix_IdleRecording] Idle unloading must not block the entry
+  // point before useRecording can trigger the model reload.
+  it("allows button and hotkey recording after idle model unloading", async () => {
+    Object.assign(modelCtl, {
+      stage: "unloaded",
+      isReady: false,
+      isUnloaded: true,
+      isLoading: false,
+    });
+    await mountApp();
+    const button = screen.getByTestId("mic-button");
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(recordingCtl.startRecording).toHaveBeenCalledTimes(1);
+    act(() => listeners.hotkey?.());
+    expect(recordingCtl.startRecording).toHaveBeenCalledTimes(2);
+    expect(toast.warning).not.toHaveBeenCalledWith(
+      translate("app.toastNotReady"),
+    );
+  });
+
+  it("allows stopping an active recording while models reload", async () => {
+    Object.assign(modelCtl, { stage: "loading", isLoading: true });
+    recordingCtl.isRecording = true;
+    await mountApp();
+    const button = screen.getByTestId("mic-button");
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(recordingCtl.stopRecording).toHaveBeenCalledTimes(1);
+    act(() => listeners.hotkey?.());
+    expect(recordingCtl.stopRecording).toHaveBeenCalledTimes(2);
+    expect(recordingCtl.startRecording).not.toHaveBeenCalled();
+    expect(screen.getByText(/正在录音，再次点击停止/)).toBeInTheDocument();
+  });
+  // [20261110_Fix_IdleRecording] END
 
   it("forwards hotkey events to the same toggle flow", async () => {
     Object.assign(modelCtl, {
